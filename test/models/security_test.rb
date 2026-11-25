@@ -478,4 +478,19 @@ class SecurityTest < ActiveSupport::TestCase
 
     assert_equal Money.new(200, "USD"), security.current_price_in("USD")
   end
+
+  test "money_market_fund? matches the settlement fund tickers" do
+    assert Security.new(ticker: "SPAXX", name: "Example Fund").money_market_fund?
+    assert Security.new(ticker: "vmfxx ", name: "Example Fund").money_market_fund?
+  end
+
+  test "money_market_fund? matches money market and settlement fund names" do
+    assert Security.new(ticker: "ZZMMF", name: "Example Treasury Money Market Fund").money_market_fund?
+    assert Security.new(ticker: "ZZSET", name: "Example Settlement Fund").money_market_fund?
+  end
+
+  test "money_market_fund? is false for other securities" do
+    assert_not Security.new(ticker: "ZZEQTY", name: "Example Total Stock Market ETF").money_market_fund?
+    assert_not Security.cash_for(accounts(:investment)).money_market_fund?
+  end
 end

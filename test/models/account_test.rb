@@ -1596,7 +1596,58 @@ class AccountTest < ActiveSupport::TestCase
     end
   end
 
+  # SimpleFIN counts a settlement fund in cash_balance and also reports it as a
+  # holding, so the cash row would repeat what the fund's own row shows.
+  test "cash_balance_outside_holdings leaves out a SimpleFIN settlement fund" do
+    account = accounts(:investment)
+    link = link_simplefin_account(account)
+    add_holding(account, ticker: "SPAXX", amount: account.cash_balance, account_provider: link)
+
+    assert_equal 0, account.cash_balance_outside_holdings
+  end
+
+  test "cash_balance_outside_holdings keeps SimpleFIN cash no settlement fund holds" do
+    account = accounts(:investment)
+    link = link_simplefin_account(account)
+    add_holding(account, ticker: "SPAXX", amount: 2000, account_provider: link)
+    add_holding(account, ticker: "ZZEQTY", amount: 3000, account_provider: link)
+
+    assert_equal account.cash_balance - 2000, account.cash_balance_outside_holdings
+  end
+
+  test "cash_balance_outside_holdings never goes below zero for SimpleFIN" do
+    account = accounts(:investment)
+    link = link_simplefin_account(account)
+    add_holding(account, ticker: "SPAXX", amount: account.cash_balance + 1000, account_provider: link)
+
+    assert_equal 0, account.cash_balance_outside_holdings
+  end
+
+  # SnapTrade already takes cash-equivalent positions out of cash_balance, so
+  # taking a fund's value out again would hide cash the account really holds.
+  test "cash_balance_outside_holdings leaves cash_balance unchanged for other providers" do
+    account = accounts(:investment)
+    link = AccountProvider.create!(account: account, provider: snaptrade_accounts(:fidelity_401k))
+    add_holding(account, ticker: "SPAXX", amount: 2000, account_provider: link)
+
+    assert_equal account.cash_balance, account.cash_balance_outside_holdings
+  end
+
   private
+    def link_simplefin_account(account)
+      item = SimplefinItem.create!(family: account.family, name: "SimpleFIN", access_url: "https://example.com/access")
+      simplefin_account = SimplefinAccount.create!(simplefin_item: item, name: account.name, account_id: "sf_brokerage",
+                                                   account_type: "investment", currency: account.currency,
+                                                   current_balance: account.balance)
+      AccountProvider.create!(account: account, provider: simplefin_account)
+    end
+
+    def add_holding(account, ticker:, amount:, account_provider:)
+      security = Security.create!(ticker: ticker, name: "#{ticker} Fund")
+      account.holdings.create!(security: security, date: Date.current, qty: amount, price: 1, amount: amount,
+                               currency: account.currency, account_provider: account_provider)
+    end
+
     def create_loan_with_start_date(start_date, opening_balance_date)
       Account.create_and_sync(
         {

@@ -38,6 +38,35 @@ class HoldingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal trade_queries.first, trade_queries.last
   end
 
+  # SimpleFIN counts a settlement fund in cash_balance and also reports it as a
+  # holding, so a cash row beside the fund's own row would show the money twice.
+  test "lists a SimpleFIN settlement fund once, without a brokerage cash row" do
+    item = SimplefinItem.create!(family: @account.family, name: "SimpleFIN", access_url: "https://example.com/access")
+    simplefin_account = SimplefinAccount.create!(simplefin_item: item, name: @account.name, account_id: "sf_brokerage",
+                                                 account_type: "investment", currency: @account.currency,
+                                                 current_balance: @account.balance)
+    link = AccountProvider.create!(account: @account, provider: simplefin_account)
+    fund = Security.create!(ticker: "SPAXX", name: "Government Money Market Fund")
+    @account.holdings.create!(security: fund, date: Date.current, qty: @account.cash_balance, price: 1,
+                              amount: @account.cash_balance, currency: @account.currency, account_provider: link)
+
+    get holdings_url(account_id: @account.id)
+
+    assert_response :success
+    assert_select "p", text: I18n.t("holdings.cash.brokerage_cash"), count: 0
+  end
+
+  test "keeps the brokerage cash row for an account not linked to SimpleFIN" do
+    fund = Security.create!(ticker: "SPAXX", name: "Government Money Market Fund")
+    @account.holdings.create!(security: fund, date: Date.current, qty: 2000, price: 1, amount: 2000,
+                              currency: @account.currency)
+
+    get holdings_url(account_id: @account.id)
+
+    assert_response :success
+    assert_select "p", text: I18n.t("holdings.cash.brokerage_cash"), count: 1
+  end
+
   test "gets holding" do
     get holding_path(@holding)
 

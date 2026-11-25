@@ -140,6 +140,17 @@ class Security < ApplicationRecord
     kind == "cash"
   end
 
+  # True for a money market or settlement fund (SPAXX and the like), by the
+  # ticker list and name patterns in config/initializers/simplefin.rb.
+  # SimplefinAccount::Investments::BalanceCalculator applies the same rule to
+  # count these funds as cash rather than as invested holdings.
+  def money_market_fund?
+    config = Rails.configuration.x.simplefin
+    return true if Array(config.money_market_tickers).include?(ticker.to_s.upcase.strip)
+
+    Array(config.money_market_patterns).any? { |pattern| name.to_s.match?(pattern) }
+  end
+
   # `family`'s tags on this security, and no other family's.
   def tags_for(family)
     family.tags.where(id: taggings.select(:tag_id))

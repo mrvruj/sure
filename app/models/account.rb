@@ -848,6 +848,24 @@ class Account < ApplicationRecord
     @current_holdings_total ||= current_holdings.sum { |h| h.amount_in_account_currency(unconvertible: 0) }
   end
 
+  # The part of cash_balance that the holdings list shows in its own cash row.
+  #
+  # SimpleFIN reports a settlement fund such as SPAXX as a holding, and
+  # SimplefinAccount::Investments::BalanceCalculator also counts that fund in
+  # cash_balance, so the list would show the same money twice. For SimpleFIN
+  # accounts this leaves out what those fund holdings already show. Other
+  # providers build cash_balance differently (SnapTrade already takes its
+  # cash-equivalent positions out, Plaid never puts them in), so their
+  # cash_balance is returned unchanged.
+  def cash_balance_outside_holdings(listed_holdings = current_holdings)
+    return cash_balance.to_d unless provider_name == "simplefin"
+
+    fund_value = listed_holdings.sum do |holding|
+      holding.security.money_market_fund? ? holding.amount_in_account_currency(unconvertible: 0) : 0
+    end
+    [ cash_balance.to_d - fund_value, 0 ].max
+  end
+
   def current_holdings
     if holdings.where.not(account_provider_id: nil).exists?
       closed_provider_ids = account_providers.where(provider_type: "SimplefinAccount").includes(:provider).filter_map do |link|
